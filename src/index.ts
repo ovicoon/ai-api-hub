@@ -1,12 +1,22 @@
 import { Ai } from '@cloudflare/ai';
 
-// 환경 변수 및 바인딩 타입 정의
 export interface Env {
   AI: any;
+  MY_SECRET_KEY: string;
 }
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    
+    const clientKey = request.headers.get('X-API-Key');
+
+    if (!clientKey || clientKey !== env.MY_SECRET_KEY) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: Invalid or missing API key' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json; charset=utf-8' }
+      });
+    }
+
     const ai = new Ai(env.AI);
 
     try {
