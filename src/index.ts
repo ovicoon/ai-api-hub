@@ -3,76 +3,132 @@ import { Ai } from '@cloudflare/ai';
 export interface Env {
   AI: any;
   MY_SECRET_KEY: string;
+  GEMINI_API_KEY: string;
+}
+
+const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8' }
+  });
+}
+
+// /api/worker-ai : Cloudflare Workers AI
+async function handleWorkerAi(body: any, env: Env): Promise<Response> {
+  const prompt = body.prompt || body.question;
+  if (!prompt) {
+    return json({ error: 'Missing required field: prompt (or question)' }, 400);
+  }
+
+  const model = body.model || '@cf/meta/llama-3.2-1b-instruct';
+  const systemInstruction = body.system || 'You are a helpful assistant.';
+
+  const aiOptions: any = {
+    messages: [
+      { role: 'system', content: systemInstruction },
+      { role: 'user', content: prompt }
+    ]
+  };
+
+  if (body.temperature !== undefined) {
+    aiOptions.temperature = Number(body.temperature);
+  }
+  if (body.top_p !== undefined) {
+    aiOptions.top_p = Number(body.top_p);
+  }
+
+  const ai = new Ai(env.AI);
+  const response = await ai.run(model as any, aiOptions);
+  return json(response);
+}
+
+// /api/gemini : Google Gemini API
+async function handleGemini(body: any, env: Env): Promise<Response> {
+  if (!env.GEMINI_API_KEY) {
+    return json({ error: 'Server misconfigured: GEMINI_API_KEY is not set' }, 500);
+  }
+
+  const prompt = body.prompt || body.question;
+  if (!prompt) {
+    return json({ error: 'Missing required field: prompt (or question)' }, 400);
+  }
+
+  const model = body.model || DEFAULT_GEMINI_MODEL;
+  const systemInstruction = body.system || 'You are a helpful assistant.';
+
+  const payload: any = {
+    systemInstruction: { parts: [{ text: systemInstruction }] },
+    contents: [{ role: 'user', parts: [{ text: String(prompt) }] }]
+  };
+
+  const generationConfig: any = {};
+  if (body.temperature !== undefined) {
+    generationConfig.temperature = Number(body.temperature);
+  }
+  if (body.top_p !== undefined) {
+    generationConfig.topP = Number(body.top_p);
+  }
+  if (body.max_tokens !== undefined) {
+    generationConfig.maxOutputTokens = Number(body.max_tokens);
+  }
+  if (Object.keys(generationConfig).length > 0) {
+    payload.generationConfig = generationConfig;
+  }
+
+  const res = await fetch(`${GEMINI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': env.GEMINI_API_KEY
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data: any = await res.json().catch(() => null);
+  if (!res.ok || !data) {
+    return json({ error: data?.error?.message || `Gemini API error (${res.status})` }, res.ok ? 502 : res.status);
+  }
+
+  const completion = (data.candidates?.[0]?.content?.parts ?? [])
+    .map((p: any) => p.text ?? '')
+    .join('');
+
+  return json({ completion, model, usage: data.usageMetadata, raw: data });
 }
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    
+
     // 1. API 키 인증 검증
     const clientKey = request.headers.get('X-API-Key');
     if (!clientKey || clientKey !== env.MY_SECRET_KEY) {
-      return new Response(JSON.stringify({ error: 'Unauthorized: Invalid or missing API key' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' }
-      });
+      return json({ error: 'Unauthorized: Invalid or missing API key' }, 401);
     }
 
-    // 2. POST 요청 확인
+    // 2. 라우팅
+    const { pathname } = new URL(request.url);
+    const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+    const handler = path === '/api/gemini' ? handleGemini
+      : path === '/api/worker-ai' ? handleWorkerAi
+      : null;
+
+    if (!handler) {
+      return json({ error: 'Not found. Use /api/gemini or /api/worker-ai.' }, 404);
+    }
+
+    // 3. POST 요청 확인
     if (request.method !== 'POST') {
-      return new Response(JSON.stringify({ error: 'Method not allowed. Use POST method.' }), {
-        status: 405,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' }
-      });
+      return json({ error: 'Method not allowed. Use POST method.' }, 405);
     }
 
     try {
-      // 클라이언트가 보낸 JSON 본문 파싱
       const body: any = await request.json();
-
-      // 3. 필수 값(질문/프롬프트) 검증
-      const prompt = body.prompt || body.question;
-      if (!prompt) {
-        return new Response(JSON.stringify({ error: 'Missing required field: prompt (or question)' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json; charset=utf-8' }
-        });
-      }
-
-      // 4. 파라미터별 기본값 설정 (값이 없으면 기본값 적용)
-      const model = body.model || '@cf/meta/llama-3.2-1b-instruct';
-      const systemInstruction = body.system || 'You are a helpful assistant.';
-
-      // AI 실행 옵션 객체 구성
-      const aiOptions: any = {
-        messages: [
-          { role: 'system', content: systemInstruction },
-          { role: 'user', content: prompt }
-        ]
-      };
-
-      // temperature 값이 전달되었다면 추가
-      if (body.temperature !== undefined) {
-        aiOptions.temperature = Number(body.temperature);
-      }
-
-      // top_p 값이 전달되었다면 추가
-      if (body.top_p !== undefined) {
-        aiOptions.top_p = Number(body.top_p);
-      }
-
-      // 5. Cloudflare Workers AI 실행
-      const ai = new Ai(env.AI);
-      const response = await ai.run(model as any, aiOptions);
-
-      return new Response(JSON.stringify(response), {
-        headers: { 'Content-Type': 'application/json; charset=utf-8' }
-      });
-
+      return await handler(body, env);
     } catch (error: any) {
-      return new Response(JSON.stringify({ error: error.message }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' }
-      });
+      return json({ error: error.message }, 500);
     }
   },
 };
