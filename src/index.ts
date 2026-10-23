@@ -7,7 +7,7 @@ export interface Env {
 }
 
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
-const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
