@@ -2,7 +2,7 @@ import { Ai } from '@cloudflare/ai';
 
 export interface Env {
   AI: any;
-  MY_SECRET_KEY: string;
+  BACKEND_API_KEY: string;
   GEMINI_API_KEY: string;
 }
 
@@ -104,7 +104,7 @@ export default {
 
     // 1. API 키 인증 검증
     const clientKey = request.headers.get('X-API-Key');
-    if (!clientKey || clientKey !== env.MY_SECRET_KEY) {
+    if (!clientKey || clientKey !== env.BACKEND_API_KEY) {
       return json({ error: 'Unauthorized: Invalid or missing API key' }, 401);
     }
 
