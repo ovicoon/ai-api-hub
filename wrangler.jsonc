@@ -4,7 +4,7 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "my-ai-worker",
+	"name": "ai-api-hub",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-10-19",
 	"observability": {
