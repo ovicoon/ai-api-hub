@@ -26,9 +26,17 @@ async function handleWorkerAi(body: any, env: Env): Promise<Response> {
 
   const systemInstruction = body.system || '';
 
+  // 이전 대화 (선택). user/assistant 의 문자열 content 만 받아 system 과 현재 질문 사이에 넣는다
+  const history = Array.isArray(body.history)
+    ? body.history
+        .filter((m: any) => (m?.role === 'user' || m?.role === 'assistant') && typeof m.content === 'string' && m.content)
+        .map((m: any) => ({ role: m.role, content: m.content }))
+    : [];
+
   const aiOptions: any = {
     messages: [
       { role: 'system', content: systemInstruction },
+      ...history,
       { role: 'user', content: prompt }
     ]
   };
