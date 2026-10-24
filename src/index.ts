@@ -19,12 +19,12 @@ function json(data: unknown, status = 200): Response {
 // /api/worker-ai : Cloudflare Workers AI
 async function handleWorkerAi(body: any, env: Env): Promise<Response> {
   const prompt = body.prompt || body.question;
-  if (!prompt) {
-    return json({ error: 'Missing required field: prompt (or question)' }, 400);
+  const required = prompt && body.model;
+  if (!required) {
+    return json({ error: 'Missing required field' }, 400);
   }
 
-  const model = body.model || '@cf/meta/llama-3.2-1b-instruct';
-  const systemInstruction = body.system || 'You are a helpful assistant.';
+  const systemInstruction = body.system || '';
 
   const aiOptions: any = {
     messages: [
@@ -41,7 +41,7 @@ async function handleWorkerAi(body: any, env: Env): Promise<Response> {
   }
 
   const ai = new Ai(env.AI);
-  const response = await ai.run(model as any, aiOptions);
+  const response = await ai.run(body.model as any, aiOptions);
   return json(response);
 }
 
