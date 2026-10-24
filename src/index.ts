@@ -39,6 +39,10 @@ async function handleWorkerAi(body: any, env: Env): Promise<Response> {
   if (body.top_p !== undefined) {
     aiOptions.top_p = Number(body.top_p);
   }
+  // Workers AI 기본값은 256 토큰이라 reasoning 모델(gpt-oss 등)은 답변 전에 잘릴 수 있음
+  if (body.max_tokens !== undefined) {
+    aiOptions.max_tokens = Number(body.max_tokens);
+  }
 
   const ai = new Ai(env.AI);
   const response = await ai.run(body.model as any, aiOptions);
